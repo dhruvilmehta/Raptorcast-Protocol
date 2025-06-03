@@ -1,0 +1,163 @@
+alice→bob:5
+carol→dave:20
+eve→frank:100
+dave→zoe:40
+frank→alice:10
+alice→carol:15
+zoe→bob:30
+bob→carol:25
+carol→eve:50
+frank→dave:60
+alice→zoe:70
+zoe→frank:80
+bob→alice:90
+carol→dave:100
+dave→alice:110
+eve→bob:120
+bob→carol:130
+carol→eve:140
+frank→zoe:150
+zoe→alice:160
+alice→bob:5
+carol→dave:20
+eve→frank:100
+dave→zoe:40
+frank→alice:10
+alice→carol:15
+zoe→bob:30
+bob→carol:25
+carol→eve:50
+frank→dave:60
+alice→zoe:70
+zoe→frank:80
+bob→alice:90
+carol→dave:100
+dave→alice:110
+eve→bob:120
+bob→carol:130
+carol→eve:140
+frank→zoe:150
+zoe→alice:160
+alice→bob:5
+carol→dave:20
+eve→frank:100
+dave→zoe:40
+frank→alice:10
+alice→carol:15
+zoe→bob:30
+bob→carol:25
+carol→eve:50
+frank→dave:60
+alice→zoe:70
+zoe→frank:80
+bob→alice:90
+carol→dave:100
+dave→alice:110
+eve→bob:120
+bob→carol:130
+carol→eve:140
+frank→zoe:150
+zoe→alice:160
+alice→bob:5
+carol→dave:20
+eve→frank:100
+dave→zoe:40
+frank→alice:10
+alice→carol:15
+zoe→bob:30
+bob→carol:25
+carol→eve:50
+frank→dave:60
+alice→zoe:70
+zoe→frank:80
+bob→alice:90
+carol→dave:100
+dave→alice:110
+eve→bob:120
+bob→carol:130
+carol→eve:140
+frank→zoe:150
+zoe→alice:160
+alice→bob:5
+carol→dave:2
+
+g++ -std=c++17 main.cpp   BlockLoader.cpp Chunker.cpp MerkleTreeBuilder.cpp PacketBuilder.cpp ChunkHeaderBuilder.cpp UdpSender.cpp HeaderBuilder.cpp -lssl -lcrypto -o test_leader
+
+g++ -std=c++17 ReceiverMain.cpp UdpReceiver.cpp -o receiver
+
+
+Started implementing Raptorcast protocol in cpp designed by @categoryLabs and having fun building it. Planning to run all the distributed nodes locally using different processes. 
+Till now, successfully built the Leader part. 
+Things done as of now: (Part 1 of the blog)
+1. Reading data from a text file. (mimicking block transactions)
+2. Splitting data into chunks of 1268 Bytes each. 
+3. Creating the 24 Byte ChunkHeader for each chunk according to the specifications mentioned in the blog.
+4. Creating merkle tree and merkle proofs (100 Bytes) by forming groups of 32 chunks. 
+5. Signing and creating a header (108 Bytes).
+6. Concatenating MerkleProof+Header+ChunkHeader+Payload (100+108+24+1268 = 1500 Bytes (max)) and creating a packet to then send it to the peers.
+7. Sending Udp Packet to a localhost address, receiving and decoding it back.
+
+To be done next:
+1. Implementing encoding scheme (to be done by leader) (Part 2 of blog)
+2. Creating multiple processes to mimic multiple nodes of a distributed system (blockchain network).
+3. Implementing Broadcast Strategy (Part 3 of blog)
+
+-------------------------
+Do you know what powers the 10,000 transactions/sec Monad blockchain? Its messaging layer, Raptorcast.
+Raptorcast is a UDP based protocol used in Monad to mainly designed to achieve Performance, Security and Robustness. 
+
+Problem: In blockchain systems, usually a leader node transmits the data to multiple validators to validate the transactions. A single block may have around 2MB of data and assuming there are 1000 validators, the leader would need to send the 2MB block to 1000 validators which would correspond to 2GB of data to transfer for 1 block. This would make the system pretty slow. 
+
+How Raptorcast solves it:
+1. Data Transmission Protocol: Raptorcast uses UDP packets which makes it much more faster as compared to TCP, since a lot of overhead is eliminated with UDP.
+But Udp comes with a cost, its a threat to authenticity(due to its connectionless nature, it is considered less secure) and successful packet delivery(packets may get lost in between, again, due to its connectionless nature).
+
+Next: we need to solve for authenticity and successful packet delivery.
+2. authenticity:
+Please note that, In distrubuted systems, we usually divide the original into multiple chunks since the original data can be very big. 
+
+We can simply achieve the authenticity by signing each and every chunk. But signing operation is a compute heavy operation and therefore can make the system slower.
+
+To solve this, we use something called as merkle tree and merkle proofs. We do this by firstly dividing the original data into chunks and forming a group of 32 chunks.
+Merkle trees: 
+Now, instead of signing each chunk, we only sign the Merkle root. Hence, the number of signing operation is decreased by a factor of 32 since we only sign once per group of 32 chunks.
+
+By this we achieve, authenticity.
+
+Next: Packet delivery 
+It is usally assumed that in Udp based systems, some packets actually get lost due to it unrealible method of trasporing packets. Some reasons may be: network instability, malicious behaviours, etc.
+
+
+So we need to make sure that every node in the network should receive all necessary chunks to further process the data. 
+
+for this we use something called as encoding scheme, wherein we transform the original message into longer derived version and the original message can be recovered from any sufficiently large subset of the new message.
+
+"For example, if we divide the proposal into 1000 source chunks (source symbols), we may estimate that 1100 encoded chunks are sufficient for successful reconstruction."
+
+Hence, we transmit, say, 1200 encoded chunks, wherein we assume that even if 100 chunks are lost, nodes will still receive 1100 chunks to decode and form the original message back.
+
+Raptorcast uses R10 Encoding scheme which is an improvement over LT encoding. (you can read more about these encoding in the mentioned blog post)
+
+Broadcasting Strategy:
+As mentioned earlier, the leader may have to send 2MB of block data to each validator to verify the transaction that creates an overhead for the leader if 1000s of nodes are involved.
+
+Raptorcast solves it, by following a two-level broadcast approach, wherein each validator receives a number of packets proportional to its stake and is responsible for then re-broadcasting those packets to the rest of the network.
+This is forms a 2 level broadcast where the leader is not responsible to transmit each and every chunk to each and every validator(node), instead, each node receives some chunks and is then responsible to transmit those chunks to other validators(nodes). This decreases the overhead of the transmission process. 
+--------------------------------------------------
+
+Started implementing Raptorcast protocol in C++, designed by @category_xyz, and having fun building it. Planning to simulate all the distributed nodes locally using different processes. 
+
+Things done as of now: (Leader node)
+1. Reading data from a text file. (mimicking block transactions)
+2. Splitting data into chunks of 1268 Bytes each. 
+3. Creating the 24 Byte ChunkHeader for each chunk according to the specifications mentioned in the blog.
+4. Creating Merkle tree and Merkle proofs (100 Bytes) by forming groups of 32 chunks. 
+5. Signing and creating a header (108 Bytes).
+6. Concatenating MerkleProof+Header+ChunkHeader+Payload (100+108+24+1268 = 1500 Bytes (max)) and creating a packet to then send it to the peers.
+7. Sending a UDP packet to a localhost address, receiving and decoding it back.
+
+To be done next:
+1. Implementing encoding scheme (to be done by leader) (Part 2 of blog)
+2. Creating multiple processes to mimic multiple nodes of a distributed system (blockchain network).
+3. Implementing Broadcast Strategy (Part 3 of blog)
+

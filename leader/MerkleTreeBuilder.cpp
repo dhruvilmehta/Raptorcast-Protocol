@@ -1,0 +1,85 @@
+#include "MerkleTreeBuilder.h"
+#include <openssl/sha.h>
+#include <stdexcept>
+#include <iostream>
+
+std::vector<uint8_t> MerkleTreeBuilder::hash(const std::vector<uint8_t>& data) {
+    std::vector<uint8_t> digest(SHA256_DIGEST_LENGTH);
+    SHA256(data.data(), data.size(), digest.data());
+    return digest;
+}
+
+std::pair<std::vector<std::vector<uint8_t>>, std::vector<std::vector<MerkleProof>>>
+MerkleTreeBuilder::buildMerkleTreeWithProofs(const std::vector<std::vector<uint8_t>>& chunks) {
+    std::vector<std::vector<uint8_t>> merkleRoots;
+    std::vector<std::vector<MerkleProof>> allProofs;
+
+    for (size_t group = 0; group * 32 < chunks.size(); ++group) {
+        size_t groupStart = group * 32;
+        size_t groupEnd = groupStart + 32;
+
+        std::vector<std::vector<uint8_t>> chunkGroup(
+            chunks.begin() + groupStart,
+            chunks.begin() + groupEnd
+        );
+
+        auto [merkleRoot, proofs] = build(chunkGroup);
+
+        merkleRoots.push_back(merkleRoot);
+        allProofs.push_back(proofs);
+    }
+
+    return {merkleRoots, allProofs};
+}
+
+std::pair<std::vector<uint8_t>, std::vector<MerkleProof>> MerkleTreeBuilder::build(const std::vector<std::vector<uint8_t>>& chunks){
+    if (chunks.empty()) throw std::invalid_argument("Chunks must not be empty");
+
+    size_t leafCount = chunks.size();
+    size_t levelSize = leafCount;
+
+    // Build leaves
+    std::vector<std::vector<uint8_t>> currentLevel;
+    for (const auto& chunk : chunks)
+        currentLevel.push_back(hash(chunk));
+
+    std::vector<std::vector<std::vector<uint8_t>>> treeLevels;
+    treeLevels.push_back(currentLevel);
+
+    // Build tree upward
+    while (currentLevel.size() > 1) {
+        std::vector<std::vector<uint8_t>> nextLevel;
+        for (size_t i = 0; i < currentLevel.size(); i += 2) {
+            std::vector<uint8_t> left = currentLevel[i];
+            std::vector<uint8_t> right = (i + 1 < currentLevel.size()) ? currentLevel[i + 1] : left;
+
+            std::vector<uint8_t> combined(left);
+            combined.insert(combined.end(), right.begin(), right.end());
+
+            nextLevel.push_back(hash(combined));
+        }
+        currentLevel = nextLevel;
+        treeLevels.push_back(currentLevel);
+    }
+
+    std::vector<uint8_t> merkleRoot = currentLevel.front();
+
+    // Generate proofs for each leaf
+    std::vector<MerkleProof> proofs(leafCount);
+    for (size_t i = 0; i < leafCount; ++i) {
+        size_t idx = i;
+        for (size_t level = 0; level < treeLevels.size() -1; ++level) {
+            const auto& siblings = treeLevels[level];
+            size_t siblingIdx = (idx % 2 == 0) ? idx + 1 : idx - 1;
+
+            if (siblingIdx >= siblings.size()) {
+                proofs[i].siblingHashes.push_back(siblings[idx]);  // Duplicate if unpaired
+            } else {
+                proofs[i].siblingHashes.push_back(siblings[siblingIdx]);
+            }
+            idx /= 2;
+        }
+    }
+
+    return {merkleRoot, proofs};
+}
