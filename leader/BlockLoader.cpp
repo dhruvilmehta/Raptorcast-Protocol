@@ -12,11 +12,13 @@ std::vector<uint8_t> BlockLoader::loadTextBlock(const std::string& filename) {
         return data;
     }
 
+    // reading the file into string stream. file is mimicking the block transactions
     std::ostringstream buffer;
-    buffer << file.rdbuf();  // Read entire file into a stringstream
+    buffer << file.rdbuf();
 
+    //converting the string into vector of uint_8 for processing.
     std::string content = buffer.str();
-    data.assign(content.begin(), content.end());  // Convert to byte vector
+    data.assign(content.begin(), content.end());
 
     return data;
 }

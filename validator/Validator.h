@@ -17,8 +17,6 @@ private:
     std::string address;
     uint16_t port;
     double stake;
-    // std::chrono::steady_clock::time_point block_start_time;
-    // std::vector<std::vector<uint8_t>> stored_packets;
     std::map<std::vector<uint8_t>, std::vector<std::vector<uint8_t>>> stored_packets;
     std::vector<ValidatorInfo> other_validators; // Changed to ValidatorInfo
     void processPackets(const std::vector<uint8_t>& block_hash);

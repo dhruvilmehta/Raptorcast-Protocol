@@ -11,20 +11,22 @@ std::vector<uint8_t> ChunkHeaderBuilder::build(
 
     std::vector<uint8_t> header;
 
-    // 1. Add recipient (20 bytes)
+    // according to the blog
+    // recipient 20 Bytes
     header.insert(header.end(), recipient.begin(), recipient.end());
 
-    // 2. Add leaf index (1 byte)
+    // Add leaf index 1 Byte
     header.push_back(leafIndex);
 
-    // 3. Reserved (1 byte)
+    // Reserved 1 Byte
     header.push_back(0x00);
 
-    // 4. Chunk ID (2 bytes, big-endian)
+    // Chunk ID 2 Bytes (big endian)
     header.push_back((chunkId >> 8) & 0xFF);
     header.push_back(chunkId & 0xFF);
 
-    return header;  // Total: 24 bytes
+    //total becomes 24 bytes
+    return header;
 }
 
 std::vector<std::vector<uint8_t>> ChunkHeaderBuilder::buildFromRawChunks(std::vector<std::vector<uint8_t>> rawChunks, std::vector<uint8_t> recipient){
@@ -39,11 +41,12 @@ std::vector<std::vector<uint8_t>> ChunkHeaderBuilder::buildFromRawChunks(std::ve
     
             std::vector<uint8_t> payload;
 
-            // Use real chunk if it exists
+            // Use real chunk if it exists, since it is possible to not exist as well because we are compulsorily forming group of 32 chunks
             if ((groupStart + i) < rawChunks.size()) {
                 payload = rawChunks[groupStart + i];
             } else {
-                // Padding chunk (1268 bytes of zero)
+                // or use dummy chunk/padding
+                // padding chunk 1268 Bytes of 0
                 payload = std::vector<uint8_t>(1268, 0);
             }
 

@@ -29,29 +29,10 @@ UdpReceiver::~UdpReceiver() {
 std::vector<uint8_t> UdpReceiver::receivePacket() {
     struct sockaddr_in client_addr;
     socklen_t addr_len = sizeof(client_addr);
-    uint8_t buffer[1500]; // Adjust size based on max packet size
+    uint8_t buffer[1500]; // max size of packet received 1500 from the blog
     int n = recvfrom(sockfd, buffer, sizeof(buffer), 0, (struct sockaddr*)&client_addr, &addr_len);
     if (n < 0) return std::vector<uint8_t>(); // Error handling
 
     std::vector<uint8_t> packet(buffer, buffer + n);
     return packet;
-
-    // struct sockaddr_in client_addr;
-    // socklen_t addr_len = sizeof(client_addr);
-    // uint8_t buffer[1024];
-    // fd_set readfds;
-    // struct timeval tv;
-    // FD_ZERO(&readfds);
-    // FD_SET(sockfd, &readfds);
-    // tv.tv_sec = 1; // 1-second timeout
-    // tv.tv_usec = 0;
-
-    // int rv = select(sockfd + 1, &readfds, NULL, NULL, &tv);
-    // if (rv == -1) return std::vector<uint8_t>(); // Error
-    // if (rv == 0) return std::vector<uint8_t>();   // Timeout
-
-    // int n = recvfrom(sockfd, buffer, sizeof(buffer), 0, (struct sockaddr*)&client_addr, &addr_len);
-    // if (n < 0) return std::vector<uint8_t>(); // Error
-
-    // return std::vector<uint8_t>(buffer, buffer + n);
 }

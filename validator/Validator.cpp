@@ -1,18 +1,21 @@
 #include "Validator.h"
 #include <iostream>
 #include <thread>
+#include <algorithm>
+#include <fstream>
+#include <vector>
+#include <stdexcept>
+#include <string>
 #include "../leader/UdpSender.h"
 #include "UdpReceiver.h"
 #include <openssl/sha.h>
-#include <openssl/evp.h> // For signature verification
-#include <openssl/ec.h>  // For ECDSA
-#include <openssl/err.h> 
+#include <openssl/evp.h>
+#include <openssl/ec.h>
+#include <openssl/err.h>
 #include <openssl/ecdsa.h>
 #include <openssl/pem.h>
-#include <algorithm>
-#include <fstream>
 
-// Helper function to compute SHA-256 hash
+// computing SHA256 and then concatenating to only 20B since we are only using 20Bytes
 std::vector<uint8_t> computeHash(const std::vector<uint8_t>& data) {
     std::vector<uint8_t> digest(SHA256_DIGEST_LENGTH);
     SHA256(data.data(), data.size(), digest.data());
@@ -30,20 +33,15 @@ Validator::Validator(std::string addr, uint16_t p, double s) : address(addr), po
 }
 
 Validator::~Validator() {
-    std::cout << "Validator at " << address << ":" << port << " destroyed\n"; // Debug destructor
+    std::cout << "Validator at " << address << ":" << port << " destroyed\n";
 }
 
 void Validator::run() {
     std::cout<<"Listening to packets"<<std::endl;
     UdpReceiver receiver(address, port);
-
-    // while (true) {
-    //     std::vector<uint8_t> packet = receiver.receivePacket();
-    //     receivePacket(packet);
-    // }
     while (true) {
         std::vector<uint8_t> packet = receiver.receivePacket();
-        if (!packet.empty()) { // Packet received
+        if (!packet.empty()) {
             receivePacket(packet);
         }
     }
@@ -51,23 +49,24 @@ void Validator::run() {
 
 void Validator::receivePacket(const std::vector<uint8_t>& packet) {
     if (packet.size() < 68) return;
-    // stored_packets.push_back(packet);
-    stored_packets[std::vector<uint8_t>(packet.begin() + 184, packet.begin() + 204)].push_back(packet); // Hash as key
 
-    // std::cout<<stored_packets.size()<<std::endl;
-    // Process if enough packets (e.g., 12 for 4 chunks with redundancy 2 + 4 backups)
+    // Here when we receive the packet, the hash of the Main block data is stored packet[184-204] hence we can use the hash of the block as key in out hashmap. This is a temporary hashmap, once we receive desired number of packets and process the packets, we clear the map with that key.
+    stored_packets[std::vector<uint8_t>(packet.begin() + 184, packet.begin() + 204)].push_back(packet);
+
+    // We are setting the broadcast bit to 1 when we receive from leader, suggesting to broadcast the packets once received. To prevent infinite rebroadcasting, we set the broadcast bit to 0 so that the validator receiving it does not rebroadcast the packet again. 
+    // Not sure how infinite rebroadcasting is prevented in actual Raptorcast.
+    std::cout<<(bool)(packet[167] & 0x80)<<std::endl;
     if (packet[167] & 0x80) {
         std::cout<<"Broadcast"<<std::endl;
         rebroadcastPacket(packet);
     }else{
-        std::cout<<"2nd Layer"<<std::endl;
+        std::cout<<"2nd Layer (Hence no broadcasting)"<<std::endl;
     }
 
+    // currently I am not using encoding scheme hence, I am harcoding the actual number of packets, for my test case its 32 packets, but after implementing encoding scheme, I can have some fixed number of packets to decode. (currently all the packets are original, not encoded with R10 or LT)
     if (stored_packets[std::vector<uint8_t>(packet.begin() + 184, packet.begin() + 204)].size() >= 32) {
         processPackets(std::vector<uint8_t>(packet.begin() + 184, packet.begin() + 204));
     }
-
-    // Re-broadcast if Broadcast flag is 1
 }
 
 void Validator::rebroadcastPacket(const std::vector<uint8_t>& packet) {
@@ -81,42 +80,8 @@ void Validator::rebroadcastPacket(const std::vector<uint8_t>& packet) {
     }
 }
 
-std::vector<uint8_t> signData(const std::vector<uint8_t>& toHash, const std::string& privateKeyFile) {
-    // Compute SHA-256 hash of toHash
-    std::vector<uint8_t> hashDigest(SHA256_DIGEST_LENGTH);
-    SHA256(toHash.data(), toHash.size(), hashDigest.data());
-
-    // Load private key from PEM file
-    FILE* fp = fopen(privateKeyFile.c_str(), "r");
-    if (!fp) throw std::runtime_error("Failed to open private key file");
-    EC_KEY* ecKey = PEM_read_ECPrivateKey(fp, NULL, NULL, NULL);
-    fclose(fp);
-    if (!ecKey) throw std::runtime_error("Failed to read private key");
-
-    // Sign the hash
-    ECDSA_SIG* sig = ECDSA_do_sign(hashDigest.data(), SHA256_DIGEST_LENGTH, ecKey);
-    if (!sig) {
-        EC_KEY_free(ecKey);
-        throw std::runtime_error("Signature failed");
-    }
-
-    // Serialize signature (r || s) padded to 32 bytes each
-    const BIGNUM* r;
-    const BIGNUM* s;
-    ECDSA_SIG_get0(sig, &r, &s);
-
-    std::vector<uint8_t> signature(65, 0); // 32 bytes r + 32 bytes s + 1 byte recovery ID
-    BN_bn2binpad(r, &signature[0], 32);
-    BN_bn2binpad(s, &signature[32], 32);
-    signature[64] = 0; // Recovery ID (not used here)
-
-    // Cleanup
-    ECDSA_SIG_free(sig);
-    EC_KEY_free(ecKey);
-
-    return signature;
-}
-
+// for testing and printing purposes
+// compare the packets based on Chunk ID and then based on Leaf index.
 struct PacketComparator {
     bool operator()(const std::vector<uint8_t>& a, const std::vector<uint8_t>& b) const {
         uint16_t chunkIdA = (static_cast<uint16_t>(a[230]) << 8) | a[231]; // Chunk ID at 230-231
@@ -126,72 +91,6 @@ struct PacketComparator {
     }
 };
 
-#include <openssl/sha.h>
-#include <openssl/evp.h>
-#include <openssl/ec.h>
-#include <openssl/err.h>
-#include <vector>
-#include <stdexcept>
-#include <iostream>
-#include <fstream>
-
-// bool verifySignature(const std::vector<uint8_t>& signature, const std::vector<uint8_t>& dataToVerify, const std::string& publicKeyFile) {
-//     // std::cout<<dataToVerify.size()<<"  fjalsdfjalsdf"<<std::endl;
-//     std::vector<uint8_t> hashDigest(SHA256_DIGEST_LENGTH);
-//     SHA256(dataToVerify.data(), dataToVerify.size(), hashDigest.data());
-
-//     // Load public key from PEM file
-//     FILE* fp = fopen(publicKeyFile.c_str(), "r");
-//     if (!fp) throw std::runtime_error("Failed to open public key file: " + publicKeyFile);
-//     EVP_PKEY* pkey = PEM_read_PUBKEY(fp, NULL, NULL, NULL);
-//     fclose(fp);
-//     if (!pkey) throw std::runtime_error("Failed to read public key from: " + publicKeyFile);
-
-//     // Verify signature
-//     EVP_MD_CTX* mdctx = EVP_MD_CTX_new();
-//     if (!mdctx) {
-//         EVP_PKEY_free(pkey);
-//         throw std::runtime_error("Failed to create MD context");
-//     }
-
-//     if (EVP_DigestVerifyInit(mdctx, NULL, EVP_sha256(), NULL, pkey) <= 0) {
-//         ERR_print_errors_fp(stderr); // Print OpenSSL errors
-//         EVP_MD_CTX_free(mdctx);
-//         EVP_PKEY_free(pkey);
-//         throw std::runtime_error("Failed to initialize verification context");
-//     }
-
-//     if (EVP_DigestVerifyUpdate(mdctx, dataToVerify.data(), dataToVerify.size()) <= 0) {
-//         ERR_print_errors_fp(stderr); // Print OpenSSL errors
-//         EVP_MD_CTX_free(mdctx);
-//         EVP_PKEY_free(pkey);
-//         throw std::runtime_error("Failed to update verification context");
-//     }
-
-//     int result = EVP_DigestVerifyFinal(mdctx, signature.data(), signature.size());
-//     if (result <= 0) {
-//         ERR_print_errors_fp(stderr); // Print OpenSSL errors
-//     }
-//     EVP_MD_CTX_free(mdctx);
-//     EVP_PKEY_free(pkey);
-
-//     if (result == 1) {
-//         return true;
-//     } else if (result == 0) {
-//         return false;
-//     } else {
-//         throw std::runtime_error("Verification failed with error: " + std::string(ERR_error_string(ERR_get_error(), NULL)));
-//     }
-// }
-
-#include <openssl/sha.h>
-#include <openssl/ec.h>
-#include <openssl/ecdsa.h>
-#include <openssl/pem.h>
-#include <stdexcept>
-#include <vector>
-#include <string>
-
 bool verifySignature(const std::vector<uint8_t>& toHash,
                      const std::vector<uint8_t>& signature,
                      const std::string& publicKeyFile) {
@@ -199,10 +98,11 @@ bool verifySignature(const std::vector<uint8_t>& toHash,
         throw std::runtime_error("Invalid signature size");
     }
 
-    // Compute SHA-256 hash of toHash
+    // computing sha256 hash
     std::vector<uint8_t> hashDigest(SHA256_DIGEST_LENGTH);
     SHA256(toHash.data(), toHash.size(), hashDigest.data());
 
+    // via GPT
     // Load public key from PEM file
     FILE* fp = fopen(publicKeyFile.c_str(), "r");
     if (!fp) throw std::runtime_error("Failed to open public key file");
@@ -247,67 +147,34 @@ bool verifySignature(const std::vector<uint8_t>& toHash,
     return verifyStatus == 1; // 1 = valid, 0 = invalid, -1 = error
 }
 
-
-// const std::vector<uint8_t> LEADER_PUBLIC_KEY = {
-//     0x04,
-//     0x67, 0xa1, 0xdf, 0x8f, 0x57, 0x11, 0x2c, 0xd9,
-//     0x35, 0xc3, 0x7a, 0x4e, 0x08, 0x6d, 0x92, 0x6a,
-//     0x82, 0x42, 0x7a, 0xbe, 0xf1, 0xd1, 0x69, 0x8b,
-//     0xd6, 0xb4, 0xf2, 0x6b, 0x77, 0xc1, 0xfa, 0x02,
-//     0x27, 0x8f, 0x61, 0x5b, 0xba, 0x66, 0x42, 0xb1,
-//     0x8e, 0x0b, 0xb7, 0xb2, 0xe3, 0xc4, 0x12, 0x8c,
-//     0x1b, 0xe0, 0x9d, 0xaa, 0x83, 0x6e, 0x1e, 0x71,
-//     0x42, 0x4c, 0x57, 0x8e, 0x4d, 0x26, 0x2b, 0xdf,
-//     0x30
-// };
-
 void Validator::processPackets(const std::vector<uint8_t>& block_hash) {
-    printPackets(block_hash);
+    // printPackets(block_hash); // to save the data into txt file (for testing purposes)
 
     std::cout << "Validator at " << address << ":" << port << " processing " << stored_packets[block_hash].size() << " packets for block hash: ";
-    // for (uint8_t byte : block_hash) std::cout << std::hex << (int)byte << " ";
-
-    // std::vector<std::vector<uint8_t>> sortedPackets = stored_packets[block_hash];
-    // std::sort(sortedPackets.begin(), sortedPackets.end(), PacketComparator());
-
-    // EVP_PKEY* publicKey = loadPublicKey(LEADER_PUBLIC_KEY);
-    // if (!publicKey) {
-    //     std::cout << "Error: Failed to load public key\n";
-    //     stored_packets.erase(block_hash);
-    //     return;
-    // }
 
     bool allValid = true;
     for (auto& packet : stored_packets[block_hash]) {
         packet[167] |= 0x80;
-        // Extract signature (100-164) and header data (165-207)
-        std::vector<uint8_t> signature(packet.begin() + 100, packet.begin() + 165); // 65 bytes
-        std::vector<uint8_t> headerData(packet.begin() + 165, packet.begin() + 208); // 43 bytes
 
-        // Extract chunk data (208 to end) and compute leaf hash
+        // Extract signature (100-164) 65 Bytes and header data (165-207) 43 Bytes
+        std::vector<uint8_t> signature(packet.begin() + 100, packet.begin() + 165);
+        std::vector<uint8_t> headerData(packet.begin() + 165, packet.begin() + 208);
+
+        // chunk with chunk header from 208 till end;
         std::vector<uint8_t> chunkData(packet.begin() + 208, packet.end());
-        std::cout<<"ChunkData size"<<chunkData.size()<<std::endl;
+        // std::cout<<"ChunkData size"<<chunkData.size()<<std::endl;
         std::vector<uint8_t> merkleLeafHash = computeHash(chunkData);
-        // for(int i=0;i<merkleLeafHash.size();i++){
-        //     std::cout<<(int)merkleLeafHash[i];
-        // }
-        // std::cout<<"Hash Finished"<<std::endl;
-        // Extract Merkle proof (0-99 bytes)
+
         std::vector<std::vector<uint8_t>> siblingHashes;
-        for (size_t i = 0; i < 100; i += 20) { // 100 bytes, 32-byte hashes (adjust if 20-byte)
+        // sibling hashes 20 Bytes each, total 5 hashes
+        for (size_t i = 0; i < 100; i += 20) {
             siblingHashes.push_back(std::vector<uint8_t>(packet.begin() + i, packet.begin() + i + 20));
         }
 
-        std::cout<<"Sibling Hashes"<<std::endl;
-        for(int i=0;i<siblingHashes.size();i++){
-            for(int j=0;j<20;j++){
-                std::cout<<(int)siblingHashes[i][j];
-            }
-            std::cout<<std::endl;
-        }
         uint8_t leafIndex = packet[228]; // Chunk Merkle leaf index at 228
-        std::cout<<"Chunk Merkle Leaf index"<<(int)packet[228]<<std::endl;
-        // Reconstruct Merkle root for this chunk
+        // std::cout<<"Chunk Merkle Leaf index"<<(int)packet[228]<<std::endl;
+
+        // Reconstructing Merkle root for this particular chunk;
         std::vector<uint8_t> currentHash = merkleLeafHash;
         size_t idx = leafIndex;
         for (size_t i = 0; i < siblingHashes.size(); ++i) {
@@ -323,19 +190,15 @@ void Validator::processPackets(const std::vector<uint8_t>& block_hash) {
             currentHash=computeHash(concat);
         }
         std::vector<uint8_t> merkleRoot = currentHash;
-        std::cout<<"Merkle Root: ";
-        for(int i=0;i<merkleRoot.size();i++){
-            std::cout<<(int)merkleRoot[i];
-        }
-        std::cout<<std::endl;
-        // Concatenate header data with Merkle root for signature verification
+        // std::cout<<"Merkle Root: ";
+        // for(int i=0;i<merkleRoot.size();i++){
+        //     std::cout<<(int)merkleRoot[i];
+        // }
+        // std::cout<<std::endl;
+
+        // Concatenating header data with Merkle root for signature verification
         std::vector<uint8_t> dataToVerify = headerData;
         dataToVerify.insert(dataToVerify.end(), merkleRoot.begin(), merkleRoot.end());
-        // std::cout<<"TO HASH"<<std::endl;
-        // for(int i=0;i<dataToVerify.size();i++){
-        //     std::cout<<(int)dataToVerify[i];
-        // }
-        // std::cout<<"TO HASH END"<<std::endl;
 
         bool signatureValid=false;
         signatureValid = verifySignature(dataToVerify, signature, "../ec-secp256k1-pub-key.pem");
@@ -346,11 +209,10 @@ void Validator::processPackets(const std::vector<uint8_t>& block_hash) {
             allValid = false;
         } else {
             std::cout << "Signature and Merkle proof verified for leaf index " << (int)leafIndex << "\n";
-            uint8_t leafIndex = packet[228]; // Chunk Merkle leaf index at 228
             uint16_t chunkId = (static_cast<uint16_t>(packet[230]) << 8) | packet[231]; // Chunk ID at 230-231
             std::cout << chunkId << " -- " << (int)leafIndex << std::endl;
 
-            // Extract and save payload (208 to end)
+            // Extract and save payload (232 to end) (Just for testing)
             // std::string payload(packet.begin() + 232, packet.end());
             // std::string filename = "chunk_" + std::to_string(chunkId) + "_leaf_" + std::to_string(leafIndex) + ".txt";
             // std::ofstream outFile(filename);
@@ -370,7 +232,7 @@ void Validator::processPackets(const std::vector<uint8_t>& block_hash) {
         std::cout << "Some packets failed validation, discarding block\n";
     }
 
-    stored_packets.erase(block_hash); // Clear only this block's packets
+    stored_packets.erase(block_hash);// clear the packets after processing (ideally, only after successfull processing)
 }
 
 void Validator::printPackets(const std::vector<uint8_t>& block_hash){
@@ -400,7 +262,7 @@ void Validator::printPackets(const std::vector<uint8_t>& block_hash){
                 std::string payload(packet.begin() + payload_start, packet.begin() + payload_start + bytes_to_write);
                 outFile << payload;
                 total_bytes_written += bytes_to_write;
-                outFile.flush(); // Ensure data is written
+                outFile.flush();
                 std::cout << "Wrote " << bytes_to_write << " bytes, total: " << total_bytes_written << "\n";
             } else if (total_bytes_written >= total_block_length) {
                 std::cout << "Reached total block length limit of " << total_block_length << " bytes\n";

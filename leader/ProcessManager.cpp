@@ -55,15 +55,12 @@ void ProcessManager::processBlock(const std::string& filename){
         std::vector<std::vector<uint8_t>> validator_packets(packets.begin() + assigned, packets.begin() + assigned + num_chunks);
         assigned += num_chunks;
 
-        // Set Broadcast flag to 1 and send
+        // setting broadcast flag to 1 and send
         for (auto& packet : validator_packets) {
-            PacketBuilder::setBroadcastBit(packet, false); // Assume this method
+            PacketBuilder::setBroadcastBit(packet, true);
         }
         std::cout<<"Sending Packets to validator at"<<validator.port<<". Packet size: "<<validator_packets.size()<<std::endl;
-        UDPSender sender(validator.address, validator.port); // Send to each validator
+        UDPSender sender(validator.address, validator.port); // sending to each validator
         sender.sendPackets(validator_packets);
     }
-    // UDPSender sender("127.0.0.1", 9000);
-    // sender.sendPackets(packets);
-    // sender.~UDPSender();
 }

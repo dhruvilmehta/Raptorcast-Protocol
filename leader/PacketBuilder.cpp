@@ -19,27 +19,19 @@ std::vector<uint8_t> PacketBuilder::build(
 
     std::vector<uint8_t> packet;
 
-    // 3. Append 100-byte Merkle proof (5 × 20-byte sibling hashes)
+    // appending 100-byte Merkle proof (5 × 20 byte sibling hashes)
     for (const auto& hash : proof.siblingHashes) {
-        for(int i=0;i<20;i++){
-            std::cout<<(int)hash[i];
-        }
-        std::cout<<"-------"<<std::endl;
-        // std::cout<<"Sibling Hash Size"<<hash.size()<<std::endl;
-        // if (hash.size() != 20) {
-        //     throw std::invalid_argument("Invalid hash size in Merkle proof");
-        // }
-        // Truncate to 20 bytes if hash is 32B
         packet.insert(packet.end(), hash.begin(), hash.begin() + 20);
     }
 
-    // 1. Append 108-byte RaptorCast header
+    // appending 108-byte RaptorCast header
     packet.insert(packet.end(), header.begin(), header.end());
 
-    // 2. Append 24-byte chunk header
+    // appending 24-byte chunk header
     packet.insert(packet.end(), fullChunk.begin(), fullChunk.begin() + 24);
-    std::cout<<"Chunk Merkle Leaf index"<<(int)packet[228]<<std::endl;
-    // 4. Append payload (chunk data after chunk header)
+    // std::cout<<"Chunk Merkle Leaf index"<<(int)packet[228]<<std::endl;
+
+    // appending payload (main block data from text file)(chunk data after chunk header)
     packet.insert(packet.end(), fullChunk.begin() + 24, fullChunk.end());
 
     return packet;
@@ -69,12 +61,10 @@ std::vector<std::vector<uint8_t>> PacketBuilder::buildPackets(const std::vector<
     return packets;
 }
 
-void PacketBuilder::setBroadcastBit(std::vector<uint8_t> packet, bool value){
-    if (packet.size() < 68) return; // Ensure header size is at least 68 bytes
-    uint8_t& byte68 = packet[67];   // 0-based index, so 67 is the 68th byte
+void PacketBuilder::setBroadcastBit(std::vector<uint8_t>& packet, bool value){
     if (value) {
-        byte68 |= 0x80;             // Set MSB (bit 7) to 1
+        packet[167] |= 0x80;
     } else {
-        byte68 &= 0x7F;             // Set MSB (bit 7) to 0
+        packet[167] &= 0x7F;
     }
 }

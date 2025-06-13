@@ -5,8 +5,8 @@
 class HeaderBuilder {
 public:
     static std::vector<uint8_t> build(
-        const std::vector<uint8_t>& merkleRoot,       // 32 bytes
-        const std::vector<uint8_t>& blockHashFirst20, // 20 bytes
+        const std::vector<uint8_t>& merkleRoot,
+        const std::vector<uint8_t>& blockHashFirst20,
         uint64_t epoch,
         uint64_t timestampMillis,
         uint16_t version,
