@@ -1,3 +1,6 @@
+#ifndef PACKETBUILDER_H
+#define PACKETBUILDER_H
+
 #pragma once
 #include <vector>
 #include <cstdint>
@@ -12,4 +15,8 @@ public:
     );
 
     static std::vector<std::vector<uint8_t>> buildPackets(const std::vector<std::vector<uint8_t>>& headers, const std::vector<std::vector<uint8_t>>& chunksWithChunkHeaders, std::vector<std::vector<MerkleProof>> merkleProofs);
+
+    static void setBroadcastBit(std::vector<uint8_t> packet, bool value);
 };
+
+#endif

@@ -11,8 +11,7 @@ public:
         uint64_t timestampMillis,
         uint16_t version,
         bool isBroadcast,
-        uint32_t blockLength,
-        const std::vector<uint8_t>& privateKey         // to sign header+merkleRoot
+        uint32_t blockLength
     );
 
     static std::vector<std::vector<uint8_t>> buildGroupHeaders(std::vector<std::vector<uint8_t>> merkleRoots, std::size_t blockSize, std::vector<uint8_t>);

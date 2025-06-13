@@ -83,8 +83,7 @@ carol→dave:2
 
 g++ -std=c++17 main.cpp   BlockLoader.cpp Chunker.cpp MerkleTreeBuilder.cpp PacketBuilder.cpp ChunkHeaderBuilder.cpp UdpSender.cpp HeaderBuilder.cpp -lssl -lcrypto -o test_leader
 
-g++ -std=c++17 ReceiverMain.cpp UdpReceiver.cpp -o receiver
-
+g++ -std=c++17 main.cpp UdpReceiver.cpp Validator.cpp -lssl -lcrypto ../leader/UdpSender.cpp -o validator
 
 Started implementing Raptorcast protocol in cpp designed by @categoryLabs and having fun building it. Planning to run all the distributed nodes locally using different processes. 
 Till now, successfully built the Leader part. 

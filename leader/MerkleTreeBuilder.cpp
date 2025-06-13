@@ -6,7 +6,7 @@
 std::vector<uint8_t> MerkleTreeBuilder::hash(const std::vector<uint8_t>& data) {
     std::vector<uint8_t> digest(SHA256_DIGEST_LENGTH);
     SHA256(data.data(), data.size(), digest.data());
-    return digest;
+    return std::vector<uint8_t>(digest.begin(), digest.begin()+20);
 }
 
 std::pair<std::vector<std::vector<uint8_t>>, std::vector<std::vector<MerkleProof>>>
@@ -34,15 +34,25 @@ MerkleTreeBuilder::buildMerkleTreeWithProofs(const std::vector<std::vector<uint8
 
 std::pair<std::vector<uint8_t>, std::vector<MerkleProof>> MerkleTreeBuilder::build(const std::vector<std::vector<uint8_t>>& chunks){
     if (chunks.empty()) throw std::invalid_argument("Chunks must not be empty");
-
+    // for(int i=0;i<chunks.size();i++){
+    //     std::cout<<chunks[i].size();
+    // }
+    // std::cout<<"-----------------------------------------------------------------"<<std::endl;
     size_t leafCount = chunks.size();
     size_t levelSize = leafCount;
 
     // Build leaves
     std::vector<std::vector<uint8_t>> currentLevel;
-    for (const auto& chunk : chunks)
+    for (const auto& chunk : chunks){
+        std::vector<uint8_t> merkleLeafHash=hash(chunk);
+        for(int i=0;i<merkleLeafHash.size();i++){
+            std::cout<<(int)merkleLeafHash[i];
+        }
+        std::cout<<std::endl;
         currentLevel.push_back(hash(chunk));
+    }
 
+    
     std::vector<std::vector<std::vector<uint8_t>>> treeLevels;
     treeLevels.push_back(currentLevel);
 
@@ -58,12 +68,13 @@ std::pair<std::vector<uint8_t>, std::vector<MerkleProof>> MerkleTreeBuilder::bui
 
             nextLevel.push_back(hash(combined));
         }
+        // std::cout<<"Level size"<<currentLevel.size()<<std::endl;
         currentLevel = nextLevel;
         treeLevels.push_back(currentLevel);
     }
 
     std::vector<uint8_t> merkleRoot = currentLevel.front();
-
+    // std::cout<<"TreeLevels size "<<treeLevels.size()<<std::endl;
     // Generate proofs for each leaf
     std::vector<MerkleProof> proofs(leafCount);
     for (size_t i = 0; i < leafCount; ++i) {
