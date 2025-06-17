@@ -9,7 +9,7 @@ struct MerkleProof {
 
 class MerkleTreeBuilder {
 public:
-    static std::pair<std::vector<std::vector<uint8_t>>, std::vector<std::vector<MerkleProof>>>
+    std::pair<std::vector<std::vector<uint8_t>>, std::vector<std::vector<MerkleProof>>>
     buildMerkleTreeWithProofs(const std::vector<std::vector<uint8_t>>& chunks);
 
     static std::pair<std::vector<uint8_t>, std::vector<MerkleProof>> build(const std::vector<std::vector<uint8_t>>& chunks);

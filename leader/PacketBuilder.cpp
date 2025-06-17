@@ -1,6 +1,7 @@
 #include "PacketBuilder.h"
 #include <stdexcept>
 #include <iostream>
+#include <chrono>
 
 std::vector<uint8_t> PacketBuilder::build(
     const std::vector<uint8_t>& header,
@@ -38,6 +39,7 @@ std::vector<uint8_t> PacketBuilder::build(
 }
 
 std::vector<std::vector<uint8_t>> PacketBuilder::buildPackets(const std::vector<std::vector<uint8_t>>& headers, const std::vector<std::vector<uint8_t>>& chunksWithChunkHeaders, std::vector<std::vector<MerkleProof>> merkleProofs){
+    auto start = std::chrono::high_resolution_clock::now();
     std::vector<std::vector<uint8_t>> packets;
 
     for (size_t group = 0; group * 32 < chunksWithChunkHeaders.size(); ++group) {
@@ -57,14 +59,9 @@ std::vector<std::vector<uint8_t>> PacketBuilder::buildPackets(const std::vector<
             packets.push_back(packet);
         }
     }
-
+    auto end = std::chrono::high_resolution_clock::now();
+    auto duration = std::chrono::duration_cast<std::chrono::milliseconds>(end - start);
+    std::cout<<"Total Number of Packets "<<packets.size()<<std::endl;
+    std::cout << "Time taken to build Packets: " << duration.count() << " ms" << std::endl;
     return packets;
-}
-
-void PacketBuilder::setBroadcastBit(std::vector<uint8_t>& packet, bool value){
-    if (value) {
-        packet[167] |= 0x80;
-    } else {
-        packet[167] &= 0x7F;
-    }
 }

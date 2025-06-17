@@ -24,11 +24,12 @@ void ProcessManager::processBlock(const std::string& filename){
     std::vector<std::vector<uint8_t>> rawChunks = Chunker::splitIntoChunks(blockData);
     std::vector<std::vector<uint8_t>> chunksWithChunkHeaders=ChunkHeaderBuilder::buildFromRawChunks(rawChunks);
 
+    MerkleTreeBuilder merkleTreeBuilder;
     std::pair<std::vector<std::vector<uint8_t>>, std::vector<std::vector<MerkleProof>>> result =
-    MerkleTreeBuilder::buildMerkleTreeWithProofs(chunksWithChunkHeaders);
+    merkleTreeBuilder.buildMerkleTreeWithProofs(chunksWithChunkHeaders);
 
     std::vector<std::vector<uint8_t>> merkleRoots = result.first;
-    std::cout<<"Merkle Root Size"<<merkleRoots[0].size()<<std::endl;
+    // std::cout<<"Merkle Root Size "<<merkleRoots[0].size()<<std::endl;
 
     std::vector<std::vector<MerkleProof>> proofs = result.second;
     // std::cout<<"Proof Size"<<proofs[0][0].siblingHashes.size()<<std::endl;
@@ -36,7 +37,8 @@ void ProcessManager::processBlock(const std::string& filename){
     std::vector<uint8_t> fullBlockHash = MerkleTreeBuilder::hash(blockData);
     std::vector<uint8_t> blockHash(fullBlockHash.begin(), fullBlockHash.begin() + 20);
 
-    std::vector<std::vector<uint8_t>> groupHeaders=HeaderBuilder::buildGroupHeaders(merkleRoots, blockData.size(), blockHash);
+    HeaderBuilder headerBuilder;
+    std::vector<std::vector<uint8_t>> groupHeaders=headerBuilder.buildGroupHeaders(merkleRoots, blockData.size(), blockHash);
 
     std::vector<std::vector<uint8_t>> packets=PacketBuilder::buildPackets(groupHeaders, chunksWithChunkHeaders, proofs);
     std::cout<<"Total Packets to transmit "<<packets.size()<<std::endl;
@@ -47,7 +49,8 @@ void ProcessManager::processBlock(const std::string& filename){
         {"127.0.0.1", 9003, 0.2}, // 20% stake
         {"127.0.0.1", 9004, 0.1}  // 10% stake
     };
-
+    
+    auto start = std::chrono::high_resolution_clock::now();
     size_t assigned = 0;
     for (const auto& validator : validators) {
         size_t num_chunks = static_cast<size_t>(packets.size() * validator.stake + 0.5); // Round to nearest
@@ -55,12 +58,12 @@ void ProcessManager::processBlock(const std::string& filename){
         std::vector<std::vector<uint8_t>> validator_packets(packets.begin() + assigned, packets.begin() + assigned + num_chunks);
         assigned += num_chunks;
 
-        // setting broadcast flag to 1 and send
-        for (auto& packet : validator_packets) {
-            PacketBuilder::setBroadcastBit(packet, true);
-        }
-        std::cout<<"Sending Packets to validator at"<<validator.port<<". Packet size: "<<validator_packets.size()<<std::endl;
+        std::cout<<"Sending Packets to validator at "<<validator.port<<". Total Packets sent: "<<validator_packets.size()<<std::endl;
         UDPSender sender(validator.address, validator.port); // sending to each validator
         sender.sendPackets(validator_packets);
     }
+
+    auto end = std::chrono::high_resolution_clock::now();
+    auto duration = std::chrono::duration_cast<std::chrono::milliseconds>(end - start);
+    std::cout << "Time taken to transmit packets: " << duration.count() << " ms" << std::endl;
 }

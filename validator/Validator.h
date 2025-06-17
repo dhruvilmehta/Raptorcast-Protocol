@@ -5,6 +5,11 @@
 #include <vector>
 #include <chrono>
 #include <map>
+#include <queue>
+#include <condition_variable>
+#include <mutex>
+#include <thread>
+#include "SignatureVerifier.h"
 
 struct ValidatorInfo {
     std::string address;
@@ -21,6 +26,16 @@ private:
     std::vector<ValidatorInfo> other_validators; // Changed to ValidatorInfo
     void processPackets(const std::vector<uint8_t>& block_hash);
     void printPackets(const std::vector<uint8_t>& block_hash);
+    std::queue<std::vector<uint8_t>> packetQueue; // Queue for received packets
+    std::mutex queueMutex; // Mutex for queue access
+    std::condition_variable cv; // Condition variable for signaling
+    bool running = true; // Control loop
+    std::thread workerThread; // Single worker thread
+    int count = 0;
+    std::mutex coutMutex;
+    int rebroadcastCount=0;
+    SignatureVerifier verifier;
+
     
     public:
     Validator(std::string addr, uint16_t p, double s);

@@ -1,10 +1,13 @@
 #pragma once
 #include <vector>
 #include <cstdint>
+#include "Signer.h"
 
 class HeaderBuilder {
 public:
-    static std::vector<uint8_t> build(
+    HeaderBuilder();
+    
+    std::vector<uint8_t> build(
         const std::vector<uint8_t>& merkleRoot,
         const std::vector<uint8_t>& blockHashFirst20,
         uint64_t epoch,
@@ -14,5 +17,8 @@ public:
         uint32_t blockLength
     );
 
-    static std::vector<std::vector<uint8_t>> buildGroupHeaders(std::vector<std::vector<uint8_t>> merkleRoots, std::size_t blockSize, std::vector<uint8_t>);
+    std::vector<std::vector<uint8_t>> buildGroupHeaders(std::vector<std::vector<uint8_t>> merkleRoots, std::size_t blockSize, std::vector<uint8_t>);
+
+    private:
+    Signer signer; 
 };

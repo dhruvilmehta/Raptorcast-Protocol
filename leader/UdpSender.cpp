@@ -32,7 +32,7 @@ void UDPSender::sendPackets(const std::vector<std::vector<uint8_t>>& packets){
         if (!sendPacket(packet)) {
             std::cerr << "Failed to send chunk\n";
         }else {
-            std::cout<<"Packet Sent Size: "<<packet.size()<<std::endl;
+            // std::cout<<"Packet Sent Size: "<<packet.size()<<std::endl;
         }
     }
 }

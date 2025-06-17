@@ -9,6 +9,9 @@
 #include "ProcessManager.h"
 #include <openssl/pem.h>
 #include <iostream>
+#include <thread>
+#include <mutex>
+
 
 std::vector<uint8_t> signData(const std::vector<uint8_t>& toHash, const std::string& privateKeyFile) {
     // sha256
@@ -55,6 +58,11 @@ void appendBigEndian(std::vector<uint8_t>& out, T value, size_t byteSize) {
     }
 }
 
+HeaderBuilder::HeaderBuilder() : signer("../ec-secp256k1-priv-key.pem") {
+
+}
+
+
 std::vector<uint8_t> HeaderBuilder::build(
     const std::vector<uint8_t>& merkleRoot,
     const std::vector<uint8_t>& blockHashFirst20,
@@ -94,7 +102,9 @@ std::vector<uint8_t> HeaderBuilder::build(
 
     uint8_t hashDigest[SHA256_DIGEST_LENGTH];
     SHA256(toHash.data(), toHash.size(), hashDigest);
-    std::vector<uint8_t> signature = signData(toHash, "../ec-secp256k1-priv-key.pem");
+    
+    std::vector<uint8_t> signature = signer.signData(toHash);
+    // std::vector<uint8_t> signature = signData(toHash, "../ec-secp256k1-priv-key.pem");
 
     // final header: signature+header fields
     std::vector<uint8_t> finalHeader;
@@ -108,7 +118,52 @@ std::vector<uint8_t> HeaderBuilder::build(
     return finalHeader;
 }
 
-std::vector<std::vector<uint8_t>> HeaderBuilder::buildGroupHeaders(std::vector<std::vector<uint8_t>> merkleRoots, std::size_t blockSize, std::vector<uint8_t> blockHash){
+// std::vector<std::vector<uint8_t>> HeaderBuilder::buildGroupHeaders(std::vector<std::vector<uint8_t>> merkleRoots, std::size_t blockSize, std::vector<uint8_t> blockHash){
+//     auto start = std::chrono::high_resolution_clock::now();
+//     std::vector<std::vector<uint8_t>> groupHeaders;
+//     uint64_t epoch = 1;
+//     uint16_t version = 1;
+//     bool isBroadcast = true;
+//     uint32_t blockLength = static_cast<uint32_t>(blockSize);
+    
+//     uint64_t timestampMillis = std::chrono::duration_cast<std::chrono::milliseconds>(
+//         std::chrono::system_clock::now().time_since_epoch()
+//     ).count();
+    
+//     for (const auto& merkleRoot : merkleRoots) {
+//         // std::cout<<"Merkle Root: "<<std::endl;
+//         // for(int i=0;i<merkleRoot.size();i++){
+//         //     std::cout<<(int)merkleRoot[i];
+//         // }
+//         // std::cout<<std::endl;
+//         std::vector<uint8_t> header = HeaderBuilder::build(
+//             merkleRoot,
+//             blockHash,
+//             epoch,
+//             timestampMillis,
+//             version,
+//             isBroadcast,
+//             blockLength
+//         );
+    
+//         groupHeaders.push_back(header);
+//     }
+
+//     auto end = std::chrono::high_resolution_clock::now();
+//     auto duration = std::chrono::duration_cast<std::chrono::milliseconds>(end - start);
+//     std::cout << "Time taken to build GroupHeaders: " << duration.count() << " ms" << std::endl;
+
+//     return groupHeaders;
+// }
+
+#include "HeaderBuilder.h"
+#include <chrono>
+#include <iostream>
+
+std::vector<std::vector<uint8_t>> HeaderBuilder::buildGroupHeaders(std::vector<std::vector<uint8_t>> merkleRoots, 
+                                                                  std::size_t blockSize, 
+                                                                  std::vector<uint8_t> blockHash) {
+    auto start = std::chrono::high_resolution_clock::now();
     std::vector<std::vector<uint8_t>> groupHeaders;
     uint64_t epoch = 1;
     uint16_t version = 1;
@@ -119,24 +174,46 @@ std::vector<std::vector<uint8_t>> HeaderBuilder::buildGroupHeaders(std::vector<s
         std::chrono::system_clock::now().time_since_epoch()
     ).count();
     
-    for (const auto& merkleRoot : merkleRoots) {
-        // std::cout<<"Merkle Root: "<<std::endl;
-        // for(int i=0;i<merkleRoot.size();i++){
-        //     std::cout<<(int)merkleRoot[i];
-        // }
-        // std::cout<<std::endl;
-        std::vector<uint8_t> header = HeaderBuilder::build(
-            merkleRoot,
-            blockHash,
-            epoch,
-            timestampMillis,
-            version,
-            isBroadcast,
-            blockLength
-        );
-    
-        groupHeaders.push_back(header);
+    size_t groupCount = merkleRoots.size(); // Number of headers to build
+    std::cout<<"Total number of groups formed (32 chunks per group)"<<groupCount<<std::endl;
+    unsigned int maxThreads = std::min(12u, static_cast<unsigned int>(std::thread::hardware_concurrency())); // Use up to 5 threads or CPU cores
+    groupHeaders.resize(groupCount); // Pre-size to avoid reallocations
+
+    std::mutex outputMutex; // Protect groupHeaders access
+
+    auto worker = [&](size_t startIdx, size_t endIdx) {
+        for (size_t i = startIdx; i < endIdx; ++i) {
+            std::vector<uint8_t> header = this->build(
+                merkleRoots[i],
+                blockHash,
+                epoch,
+                timestampMillis,
+                version,
+                isBroadcast,
+                blockLength
+            );
+            std::lock_guard<std::mutex> lock(outputMutex); // Thread-safe write
+            groupHeaders[i] = std::move(header); // Assign to pre-allocated index
+        }
+    };
+
+    std::vector<std::thread> threads;
+    size_t itemsPerThread = (groupCount + maxThreads - 1) / maxThreads;
+
+    for (unsigned int t = 0; t < maxThreads; ++t) {
+        size_t startIdx = t * itemsPerThread;
+        size_t endIdx = std::min(startIdx + itemsPerThread, groupCount);
+        if (startIdx >= endIdx) break; // No more work
+        threads.emplace_back(worker, startIdx, endIdx);
     }
+
+    for (auto& th : threads) {
+        th.join();
+    }
+
+    auto end = std::chrono::high_resolution_clock::now();
+    auto duration = std::chrono::duration_cast<std::chrono::milliseconds>(end - start);
+    std::cout << "Time taken to build GroupHeaders: " << duration.count() << " ms" << std::endl;
 
     return groupHeaders;
 }

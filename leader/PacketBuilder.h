@@ -15,8 +15,6 @@ public:
     );
 
     static std::vector<std::vector<uint8_t>> buildPackets(const std::vector<std::vector<uint8_t>>& headers, const std::vector<std::vector<uint8_t>>& chunksWithChunkHeaders, std::vector<std::vector<MerkleProof>> merkleProofs);
-
-    static void setBroadcastBit(std::vector<uint8_t>& packet, bool value);
 };
 
 #endif
